@@ -1,0 +1,1379 @@
+*----------------------------------------------------------------------*
+***INCLUDE ZNEOI_003_FORM.
+*----------------------------------------------------------------------*
+
+
+*&---------------------------------------------------------------------*
+*&      Form  F_SELECAO_POR_REQUISICAO
+*&---------------------------------------------------------------------*
+*       Executa a seleção dos dados a partir da Requisição
+*----------------------------------------------------------------------*
+FORM f_selecao_por_requisicao .
+
+* Declarações Locais
+  DATA:
+    lt_ekpo_fae     TYPE TABLE OF ty_ekpo,
+    lt_eban_aux     TYPE TABLE OF eban,
+    lt_awkey        TYPE TABLE OF ty_awkey,
+    lt_ekbe_fae     TYPE TABLE OF ty_ekbe,
+
+    ls_eban_aux     TYPE eban,
+    ls_eban         TYPE ty_eban,
+    ls_awkey        TYPE ty_awkey,
+    ls_ekbe         TYPE ty_ekbe,
+    ls_ekko         TYPE ty_ekko.
+
+* Seleciona Requisições
+  REFRESH gt_eban[].
+  SELECT  banfn
+          bnfpo
+          bsart
+          bstyp
+          loekz
+          frgkz
+          badat
+          lfdat
+          konnr
+          ktpnr
+    FROM eban
+    INTO TABLE gt_eban
+    WHERE banfn   IN s_ban_r
+      AND bnfpo   IN s_bnf_r
+      AND badat   IN s_bad_r
+      AND lfdat   IN s_lfd_r
+      AND loekz   NE c_req_eliminada.
+
+  IF sy-subrc IS INITIAL.
+
+* Seleciona Pedido e Itens
+    REFRESH gt_ekpo[].
+    SELECT  ebeln
+            ebelp
+            matnr
+            bukrs
+            werks
+            banfn
+            bnfpo
+            konnr
+      FROM ekpo
+      INTO TABLE gt_ekpo
+      FOR ALL ENTRIES IN gt_eban
+      WHERE banfn   EQ gt_eban-banfn
+        AND bnfpo   EQ gt_eban-bnfpo
+        AND loekz   NE c_ped_eliminado.
+
+    IF sy-subrc IS INITIAL.
+
+      REFRESH lt_ekpo_fae[].
+      lt_ekpo_fae[] = gt_ekpo[].
+      SORT lt_ekpo_fae BY ebeln.
+      DELETE ADJACENT DUPLICATES FROM lt_ekpo_fae COMPARING ebeln.
+
+      IF lt_ekpo_fae[] IS NOT INITIAL.
+
+* Seleciona Cabeçario do Pedido
+        REFRESH gt_ekko[].
+        SELECT  ebeln
+                bukrs
+                bstyp
+                bsart
+                aedat
+                lifnr
+          FROM ekko
+          INTO TABLE gt_ekko
+          FOR ALL ENTRIES IN lt_ekpo_fae
+          WHERE ebeln   EQ lt_ekpo_fae-ebeln
+            AND loekz   NE c_ped_eliminado.
+
+      ENDIF.
+
+      REFRESH lt_ekpo_fae[].
+      lt_ekpo_fae[] = gt_ekpo[].
+      SORT lt_ekpo_fae BY ebeln ebelp.
+      DELETE ADJACENT DUPLICATES FROM lt_ekpo_fae COMPARING ebeln ebelp.
+
+      IF lt_ekpo_fae[] IS NOT INITIAL.
+
+        REFRESH gt_ekbe[].
+        SELECT  ebeln
+                ebelp
+                zekkn
+                vgabe
+                gjahr
+                belnr
+                buzei
+                bewtp
+                shkzg
+          FROM ekbe
+          INTO TABLE gt_ekbe
+          FOR ALL ENTRIES IN lt_ekpo_fae
+          WHERE ebeln = lt_ekpo_fae-ebeln
+            AND ebelp = lt_ekpo_fae-ebelp.
+
+        IF sy-subrc IS INITIAL.
+
+          REFRESH lt_ekbe_fae[].
+          lt_ekbe_fae[] = gt_ekbe[].
+          SORT lt_ekbe_fae BY belnr gjahr.
+          DELETE ADJACENT DUPLICATES FROM lt_ekbe_fae COMPARING belnr gjahr.
+
+          IF lt_ekbe_fae[] IS NOT INITIAL.
+
+            REFRESH gt_j_1bnfdoc[].
+            SELECT  docnum
+                    nftype
+                    series
+                    nfnum
+                    belnr
+                    gjahr
+                    bukrs
+                    branch
+                    nfenum
+                    nfesrv
+              FROM j_1bnfdoc
+              INTO TABLE gt_j_1bnfdoc
+              FOR ALL ENTRIES IN lt_ekbe_fae
+              WHERE belnr EQ lt_ekbe_fae-belnr
+                AND gjahr EQ lt_ekbe_fae-gjahr.
+
+          ENDIF.
+*          SORT gt_ekko BY ebeln.
+*
+*          REFRESH lt_awkey[].
+*          LOOP AT gt_ekbe INTO ls_ekbe.
+*
+*            CLEAR ls_awkey.
+*
+*            CONCATENATE ls_ekbe-belnr
+*                        ls_ekbe-gjahr
+*                   INTO ls_awkey-awkey.
+*
+*            CLEAR ls_ekko.
+*            READ TABLE gt_ekko INTO ls_ekko WITH KEY  ebeln = ls_ekbe-ebeln
+*                                                      BINARY SEARCH.
+*            IF sy-subrc IS INITIAL.
+*              ls_awkey-bukrs = ls_ekko-bukrs.
+*            ENDIF.
+*
+*            APPEND ls_awkey TO lt_awkey.
+*
+*          ENDLOOP.
+*
+*          SORT lt_awkey BY bukrs awkey.
+*          DELETE ADJACENT DUPLICATES FROM lt_awkey COMPARING bukrs awkey.
+*
+*          IF lt_awkey[] IS NOT INITIAL.
+*
+*            REFRESH gt_bkpf[].
+*            SELECT  bukrs
+*                    belnr
+*                    gjahr
+*                    blart
+*                    bldat
+*                    xblnr
+*                    awkey
+*              FROM bkpf
+*              INTO TABLE gt_bkpf
+*              FOR ALL ENTRIES IN lt_awkey
+*              WHERE bukrs = lt_awkey-bukrs
+*                AND awkey = lt_awkey-awkey.
+*
+*          ENDIF.
+
+        ENDIF.
+
+      ENDIF.
+
+    ENDIF.
+
+* Busca dados do Aprovador da Requisição
+    REFRESH lt_eban_aux[].
+    LOOP AT gt_eban INTO ls_eban.
+
+      MOVE-CORRESPONDING ls_eban TO ls_eban_aux.
+      APPEND ls_eban_aux TO lt_eban_aux.
+
+    ENDLOOP.
+
+    REFRESH gt_et_aprov[].
+    CALL FUNCTION 'ZNEOF_GET_STATUS_APROV'
+      EXPORTING
+        it_eban  = lt_eban_aux
+      IMPORTING
+        et_aprov = gt_et_aprov.
+
+
+  ENDIF.
+
+ENDFORM.                    " F_SELECAO_POR_REQUISICAO
+
+*&---------------------------------------------------------------------*
+*&      Form  F_PROCESSA_DADOS_REQ
+*&---------------------------------------------------------------------*
+*       Processa os dados selecionados por Requisição
+*----------------------------------------------------------------------*
+FORM f_processa_dados_req .
+
+* Declarações Locais
+  DATA:
+    lt_ekbe_migo    TYPE TABLE OF ty_ekbe,
+    lt_ekbe_miro    TYPE TABLE OF ty_ekbe,
+
+    ls_eban         LIKE LINE OF gt_eban,
+    ls_ekpo         LIKE LINE OF gt_ekpo,
+    ls_ekko         LIKE LINE OF gt_ekko,
+    ls_saida        LIKE LINE OF gt_saida,
+    ls_et_aprov     LIKE LINE OF gt_et_aprov,
+    ls_ekbe         LIKE LINE OF gt_ekbe,
+    ls_ekbe_migo    LIKE LINE OF lt_ekbe_migo,
+    ls_ekbe_miro    LIKE LINE OF lt_ekbe_miro,
+    ls_bkpf         LIKE LINE OF gt_bkpf,
+    ls_j_1bnfdoc    LIKE LINE OF gt_j_1bnfdoc,
+
+    lv_index_ekpo   TYPE sy-tabix,
+    lv_migo_found   TYPE c,
+    lv_miro_found   TYPE c,
+    lv_count        TYPE sy-tabix,
+    lv_awkey        TYPE bkpf-awkey.
+
+
+
+
+  SORT: gt_ekpo       BY banfn bnfpo,
+        gt_ekko       BY ebeln,
+        gt_et_aprov   BY banfn bnfpo,
+        gt_ekbe       BY ebeln ebelp,
+        gt_bkpf       BY bukrs awkey,
+        gt_j_1bnfdoc  BY belnr gjahr.
+
+  REFRESH gt_saida[].
+
+* Monta tabela de saída do ALV
+  LOOP AT gt_eban INTO ls_eban.
+
+    CLEAR ls_saida.
+    ls_saida-banfn = ls_eban-banfn.
+    ls_saida-bnfpo = ls_eban-bnfpo.
+    ls_saida-lfdat = ls_eban-lfdat.
+    ls_saida-konnr = ls_eban-konnr.
+
+* Dados da Aprovação da Requisição
+    CLEAR ls_et_aprov.
+    READ TABLE gt_et_aprov INTO ls_et_aprov WITH KEY  banfn = ls_eban-banfn
+                                                      bnfpo = ls_eban-bnfpo
+                                                      BINARY SEARCH.
+    IF sy-subrc IS INITIAL.
+
+      ls_saida-uname_aprov = ls_et_aprov-username.
+      ls_saida-udate_aprov = ls_et_aprov-udate.
+      ls_saida-utime_aprov = ls_et_aprov-utime.
+      ls_saida-descricao   = ls_et_aprov-descricao.
+
+    ENDIF.
+
+* Dados de Pedido
+    CLEAR ls_ekpo.
+    READ TABLE gt_ekpo INTO ls_ekpo WITH KEY  banfn = ls_eban-banfn
+                                              bnfpo = ls_eban-bnfpo
+                                              BINARY SEARCH.
+    IF sy-subrc IS INITIAL.
+
+      CLEAR lv_index_ekpo.
+      lv_index_ekpo = sy-tabix.
+
+      LOOP AT gt_ekpo INTO ls_ekpo FROM lv_index_ekpo.
+
+        IF  ls_ekpo-banfn NE ls_eban-banfn OR
+            ls_ekpo-bnfpo NE ls_eban-bnfpo.
+          EXIT.
+        ENDIF.
+
+        ls_saida-ebeln = ls_ekpo-ebeln.
+        ls_saida-ebelp = ls_ekpo-ebelp.
+
+* Dá a preferência para o contrato do Pedido
+        IF ls_ekpo-konnr IS NOT INITIAL.
+          ls_saida-konnr = ls_ekpo-konnr.
+        ENDIF.
+
+        CLEAR ls_ekko.
+        READ TABLE gt_ekko INTO ls_ekko WITH KEY  ebeln = ls_ekpo-ebeln
+                                                  BINARY SEARCH.
+        IF sy-subrc IS NOT INITIAL.
+
+          ls_saida-aedat = ls_ekko-aedat.
+
+        ENDIF.
+
+
+        CLEAR ls_ekbe.
+        READ TABLE gt_ekbe INTO ls_ekbe WITH KEY  ebeln = ls_ekpo-ebeln
+                                                  ebelp = ls_ekpo-ebelp
+                                                  BINARY SEARCH.
+        IF sy-subrc IS INITIAL.
+
+          REFRESH lt_ekbe_migo[].
+          lt_ekbe_migo[] = gt_ekbe[].
+          DELETE lt_ekbe_migo WHERE ebeln <> ls_ekpo-ebeln
+                                 OR ebelp <> ls_ekpo-ebelp
+                                 OR bewtp <> 'E'.
+
+          REFRESH lt_ekbe_miro[].
+          lt_ekbe_miro[] = gt_ekbe[].
+          DELETE lt_ekbe_miro WHERE ebeln <> ls_ekpo-ebeln
+                                 OR ebelp <> ls_ekpo-ebelp
+                                 OR bewtp <> 'Q'.
+
+          CLEAR lv_count.
+          DO.
+
+            CLEAR:  lv_migo_found,
+                    lv_miro_found.
+
+            lv_count = lv_count + 1.
+
+* Dados da MIGO
+            CLEAR ls_ekbe_migo.
+            READ TABLE lt_ekbe_migo INTO ls_ekbe_migo INDEX lv_count.
+            IF sy-subrc IS INITIAL.
+
+              lv_migo_found = abap_true.
+
+              ls_saida-mblnr      = ls_ekbe_migo-belnr.
+              ls_saida-gjahr_migo = ls_ekbe_migo-gjahr.
+
+            ENDIF.
+
+* Dados da MIRO
+            CLEAR ls_ekbe_miro.
+            READ TABLE lt_ekbe_miro INTO ls_ekbe_miro INDEX lv_count.
+            IF sy-subrc IS INITIAL.
+
+              lv_miro_found = abap_true.
+
+              ls_saida-belnr      = ls_ekbe_miro-belnr.
+              ls_saida-gjahr_miro = ls_ekbe_miro-gjahr.
+
+              CLEAR ls_j_1bnfdoc.
+              READ TABLE gt_j_1bnfdoc INTO ls_j_1bnfdoc WITH KEY  belnr = ls_ekbe_miro-belnr
+                                                                  gjahr = ls_ekbe_miro-gjahr
+                                                                  BINARY SEARCH.
+              IF sy-subrc IS INITIAL.
+
+                ls_saida-nfnum  = ls_j_1bnfdoc-nfnum.
+                ls_saida-series = ls_j_1bnfdoc-series.
+                ls_saida-docnum = ls_j_1bnfdoc-docnum.
+
+              ENDIF.
+
+** Monta awkey
+*              CLEAR lv_awkey.
+*              CONCATENATE ls_ekbe_miro-belnr
+*                          ls_ekbe_miro-gjahr
+*                     INTO lv_awkey.
+*
+*              CLEAR ls_bkpf.
+*              READ TABLE gt_bkpf INTO ls_bkpf WITH KEY  bukrs = ls_ekpo-bukrs
+*                                                        awkey = lv_awkey
+*                                                        BINARY SEARCH.
+*              IF sy-subrc IS INITIAL.
+*
+*                ls_saida-nfnum = ls_bkpf-xblnr.
+*
+*              ENDIF.
+
+            ENDIF.
+
+            IF  lv_migo_found IS INITIAL AND
+                lv_miro_found IS INITIAL.
+
+              EXIT.
+
+            ELSE.
+
+* Adiciona registro na tabela interna do ALV
+              APPEND ls_saida TO gt_saida.
+
+* Limpa os campos
+              CLEAR:  ls_saida-mblnr,
+                      ls_saida-belnr,
+                      ls_saida-nfnum,
+                      ls_saida-series,
+                      ls_saida-gjahr_migo,
+                      ls_saida-gjahr_miro,
+                      ls_saida-docnum.
+
+            ENDIF.
+
+          ENDDO.
+
+        ELSE.
+
+* Se ainda os Documentos da MIGO e MIRO não foram criados para este item do Pedido,
+* então apenas adicionar o registro com os dados da Requisição e Pedido
+          APPEND ls_saida TO gt_saida.
+
+        ENDIF.
+
+      ENDLOOP.
+
+    ELSE.
+
+* Se ainda o Pedido não foi criado para a Requisição, então apenas adicionar o registro com os dados
+* da Requisição
+      APPEND ls_saida TO gt_saida.
+
+    ENDIF.
+
+  ENDLOOP.
+
+
+ENDFORM.                    " F_PROCESSA_DADOS_REQ
+
+*&---------------------------------------------------------------------*
+*&      Form  F_PREPARA_ALV
+*&---------------------------------------------------------------------*
+*       Prepara layout do ALV, monta fieldcat e etc...
+*----------------------------------------------------------------------*
+FORM f_prepara_alv .
+
+* Declarações Locais
+  FIELD-SYMBOLS:
+    <lfs_fcat>     LIKE LINE OF gt_fcat[].
+
+* Preenche layout
+  CLEAR gs_layout_alv.
+  gs_layout_alv-zebra       = abap_true.
+  gs_layout_alv-col_opt     = abap_true.
+  gs_layout_alv-cwidth_opt  = abap_true.
+
+* Montagem do fieldcat
+  REFRESH gt_fcat[].
+  MOVE lcl_alv_tracking=>get_fieldcat( 'ZNEOS_005' )
+    TO gt_fcat[].
+
+  LOOP AT gt_fcat ASSIGNING <lfs_fcat>.
+
+    CASE <lfs_fcat>-fieldname.
+
+      WHEN c_banfn.
+        <lfs_fcat>-reptext    = 'Nº Requisição'(001).
+        <lfs_fcat>-scrtext_l  = 'Nº Requisição'(001).
+        <lfs_fcat>-scrtext_m  = 'Nº Requisição'(001).
+        <lfs_fcat>-scrtext_s  = 'Nº Requisição'(001).
+
+        <lfs_fcat>-hotspot    = abap_true.
+
+      WHEN c_bnfpo.
+        <lfs_fcat>-reptext    = 'Item Requisição'(002).
+        <lfs_fcat>-scrtext_l  = 'Item Requisição'(002).
+        <lfs_fcat>-scrtext_m  = 'Item Requisição'(002).
+        <lfs_fcat>-scrtext_s  = 'Item Requisição'(002).
+
+      WHEN c_lfdat.
+        <lfs_fcat>-reptext    = 'Data Requisição'(003).
+        <lfs_fcat>-scrtext_l  = 'Data Requisição'(003).
+        <lfs_fcat>-scrtext_m  = 'Data Requisição'(003).
+        <lfs_fcat>-scrtext_s  = 'Data Requisição'(003).
+
+      WHEN c_uname_aprov.
+        <lfs_fcat>-reptext    = 'Aprovador Req.'(010).
+        <lfs_fcat>-scrtext_l  = 'Aprovador Req.'(010).
+        <lfs_fcat>-scrtext_m  = 'Aprovador Req.'(010).
+        <lfs_fcat>-scrtext_s  = 'Aprovador Req.'(010).
+
+      WHEN c_udate_aprov.
+        <lfs_fcat>-reptext    = 'Data Aprov. Req.'(011).
+        <lfs_fcat>-scrtext_l  = 'Data Aprov. Req.'(011).
+        <lfs_fcat>-scrtext_m  = 'Data Aprov. Req.'(011).
+        <lfs_fcat>-scrtext_s  = 'Data Aprov. Req.'(011).
+
+      WHEN c_utime_aprov.
+        <lfs_fcat>-reptext    = 'Hora Aprov. Req.'(012).
+        <lfs_fcat>-scrtext_l  = 'Hora Aprov. Req.'(012).
+        <lfs_fcat>-scrtext_m  = 'Hora Aprov. Req.'(012).
+        <lfs_fcat>-scrtext_s  = 'Hora Aprov. Req.'(012).
+
+      WHEN c_descricao.
+        <lfs_fcat>-reptext    = 'Status Aprov.'(016).
+        <lfs_fcat>-scrtext_l  = 'Status Aprov.'(016).
+        <lfs_fcat>-scrtext_m  = 'Status Aprov.'(016).
+        <lfs_fcat>-scrtext_s  = 'Status Aprov.'(016).
+
+      WHEN c_ebeln.
+        <lfs_fcat>-reptext    = 'Nº Pedido'(004).
+        <lfs_fcat>-scrtext_l  = 'Nº Pedido'(004).
+        <lfs_fcat>-scrtext_m  = 'Nº Pedido'(004).
+        <lfs_fcat>-scrtext_s  = 'Nº Pedido'(004).
+
+        <lfs_fcat>-hotspot    = abap_true.
+
+      WHEN c_ebelp.
+        <lfs_fcat>-reptext    = 'Item Pedido'(005).
+        <lfs_fcat>-scrtext_l  = 'Item Pedido'(005).
+        <lfs_fcat>-scrtext_m  = 'Item Pedido'(005).
+        <lfs_fcat>-scrtext_s  = 'Item Pedido'(005).
+
+      WHEN c_aedat.
+        <lfs_fcat>-reptext    = 'Data Pedido'(006).
+        <lfs_fcat>-scrtext_l  = 'Data Pedido'(006).
+        <lfs_fcat>-scrtext_m  = 'Data Pedido'(006).
+        <lfs_fcat>-scrtext_s  = 'Data Pedido'(006).
+
+      WHEN c_mblnr.
+        <lfs_fcat>-reptext    = 'Doc. MIGO'(007).
+        <lfs_fcat>-scrtext_l  = 'Doc. MIGO'(007).
+        <lfs_fcat>-scrtext_m  = 'Doc. MIGO'(007).
+        <lfs_fcat>-scrtext_s  = 'Doc. MIGO'(007).
+
+        <lfs_fcat>-hotspot    = abap_true.
+
+      WHEN c_belnr.
+        <lfs_fcat>-reptext    = 'Doc. MIRO'(008).
+        <lfs_fcat>-scrtext_l  = 'Doc. MIRO'(008).
+        <lfs_fcat>-scrtext_m  = 'Doc. MIRO'(008).
+        <lfs_fcat>-scrtext_s  = 'Doc. MIRO'(008).
+
+        <lfs_fcat>-hotspot    = abap_true.
+
+      WHEN c_nfnum.
+        <lfs_fcat>-reptext    = 'Nota Fiscal'(009).
+        <lfs_fcat>-scrtext_l  = 'Nota Fiscal'(009).
+        <lfs_fcat>-scrtext_m  = 'Nota Fiscal'(009).
+        <lfs_fcat>-scrtext_s  = 'Nota Fiscal'(009).
+
+        <lfs_fcat>-hotspot    = abap_true.
+
+      WHEN c_series.
+        <lfs_fcat>-reptext    = 'Série'(015).
+        <lfs_fcat>-scrtext_l  = 'Série'(015).
+        <lfs_fcat>-scrtext_m  = 'Série'(015).
+        <lfs_fcat>-scrtext_s  = 'Série'(015).
+
+      WHEN c_konnr.
+        <lfs_fcat>-reptext    = 'Contrato'(014).
+        <lfs_fcat>-scrtext_l  = 'Contrato'(014).
+        <lfs_fcat>-scrtext_m  = 'Contrato'(014).
+        <lfs_fcat>-scrtext_s  = 'Contrato'(014).
+
+      WHEN OTHERS.
+        <lfs_fcat>-tech = abap_true.
+
+    ENDCASE.
+
+  ENDLOOP.
+
+ENDFORM.                    " F_PREPARA_ALV
+
+*&---------------------------------------------------------------------*
+*&      Form  F_EXIBE_ALV
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+FORM f_exibe_alv .
+
+  DATA:
+    lo_event        TYPE REF TO lcl_grid_event_receiver.
+
+  IF go_cont_alv IS NOT BOUND.
+
+* Cria o container do ALV para manipulação do Arquivo
+    CREATE OBJECT go_cont_alv
+      EXPORTING
+        container_name              = 'CONT_ALV'
+        repid                       = sy-repid
+        dynnr                       = sy-dynnr
+      EXCEPTIONS
+        cntl_error                  = 1
+        cntl_system_error           = 2
+        create_error                = 3
+        lifetime_error              = 4
+        lifetime_dynpro_dynpro_link = 5
+        OTHERS                      = 6.
+    IF sy-subrc <> 0.
+      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+                 WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ENDIF.
+
+* Instancia o objeto do ALV GRID
+    CREATE OBJECT go_alv_grid
+      EXPORTING
+        i_parent          = go_cont_alv
+      EXCEPTIONS
+        error_cntl_create = 1
+        error_cntl_init   = 2
+        error_cntl_link   = 3
+        error_dp_create   = 4
+        OTHERS            = 5.
+    IF sy-subrc <> 0.
+      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+                 WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ENDIF.
+
+*** Habilita os eventos do ALV GRID
+    CREATE OBJECT lo_event.
+    SET HANDLER lo_event->handler_hotspot_click FOR go_alv_grid.
+
+*  CALL METHOD go_alv_grid->register_edit_event
+*    EXPORTING
+*      i_event_id = cl_gui_alv_grid=>mc_evt_modified.
+
+* Exibe o ALV GRID
+    CALL METHOD go_alv_grid->set_table_for_first_display
+      EXPORTING
+*       i_structure_name              = 'ZNEOS_005'
+        is_layout                     = gs_layout_alv
+*       is_print                      =
+      CHANGING
+        it_outtab                     = gt_saida[]
+        it_fieldcatalog               = gt_fcat[]
+      EXCEPTIONS
+        invalid_parameter_combination = 1
+        program_error                 = 2
+        too_many_lines                = 3
+        OTHERS                        = 4.
+
+    IF sy-subrc <> 0.
+      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+              WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ENDIF.
+
+  ELSE.
+
+    CALL METHOD go_alv_grid->refresh_table_display
+*      EXPORTING
+*        is_stable      =
+*       i_soft_refresh =
+      EXCEPTIONS
+        finished       = 1
+        OTHERS         = 2.
+
+    IF sy-subrc <> 0.
+      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+              WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ENDIF.
+
+  ENDIF.
+
+ENDFORM.                    " F_EXIBE_ALV
+
+*&---------------------------------------------------------------------*
+*&      Form  F_EXIBE_CAMPOS_SELECAO
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+FORM f_exibe_campos_selecao .
+
+  LOOP AT SCREEN.
+
+* Requisição
+    IF rb_req IS NOT INITIAL.
+      " Macro         Grupo1    Radiobutton
+      d_exibe_campos: 'REQ'     abap_on.
+    ELSE.
+      " Macro         Grupo1    Radiobutton
+      d_exibe_campos: 'REQ'     abap_off.
+    ENDIF.
+
+* Pedido
+    IF rb_ped IS NOT INITIAL.
+      " Macro         Grupo1    Radiobutton
+      d_exibe_campos: 'PED'     abap_on.
+    ELSE.
+      " Macro         Grupo1    Radiobutton
+      d_exibe_campos: 'PED'     abap_off.
+    ENDIF.
+
+* Nota Fiscal
+    IF rb_nf IS NOT INITIAL.
+      " Macro         Grupo1    Radiobutton
+      d_exibe_campos: 'NF'     abap_on.
+    ELSE.
+      " Macro         Grupo1    Radiobutton
+      d_exibe_campos: 'NF'     abap_off.
+    ENDIF.
+
+    MODIFY SCREEN.
+
+  ENDLOOP.
+
+ENDFORM.                    " F_EXIBE_CAMPOS_SELECAO
+
+*&---------------------------------------------------------------------*
+*&      Form  F_HABILITA_CAMPOS
+*&---------------------------------------------------------------------*
+* Habilita os campos da tela de seleção
+*----------------------------------------------------------------------*
+FORM f_habilita_campos .
+
+  MOVE  c_habilitar  TO screen-input.
+  MOVE  c_habilitar  TO screen-output.
+  CLEAR screen-invisible.
+  MODIFY SCREEN.
+
+ENDFORM.                    " F_HABILITA_CAMPOS
+
+*&---------------------------------------------------------------------*
+*&      Form  F_DESABILITA_CAMPOS
+*&---------------------------------------------------------------------*
+* Desabilita os campos da tela de seleção
+*----------------------------------------------------------------------*
+FORM f_desabilita_campos .
+
+  CLEAR screen-input.
+  CLEAR screen-output.
+  MOVE  c_habilitar  TO screen-invisible.
+  MODIFY SCREEN.
+
+ENDFORM.                    " F_DESABILITA_CAMPOS
+
+*&---------------------------------------------------------------------*
+*&      Form  F_SELECAO_POR_PEDIDO
+*&---------------------------------------------------------------------*
+*       Executa seleção por Pedido
+*----------------------------------------------------------------------*
+FORM f_selecao_por_pedido .
+
+* Declarações Locais
+  DATA:
+    lt_ekpo_fae     TYPE TABLE OF ty_ekpo,
+    lt_eban_aux     TYPE TABLE OF eban,
+    lt_awkey        TYPE TABLE OF ty_awkey,
+    lt_ekbe_fae     TYPE TABLE OF ty_ekbe,
+
+    ls_eban_aux     TYPE eban,
+    ls_eban         TYPE ty_eban,
+    ls_awkey        TYPE ty_awkey,
+    ls_ekbe         TYPE ty_ekbe,
+    ls_ekko         TYPE ty_ekko.
+
+
+
+* Seleciona Pedido e Itens
+  REFRESH gt_ekpo[].
+  SELECT  ebeln
+          ebelp
+          matnr
+          bukrs
+          werks
+          banfn
+          bnfpo
+          konnr
+    FROM ekpo
+    INTO TABLE gt_ekpo
+    WHERE ebeln   IN s_ebn_p
+      AND ebelp   IN s_ebp_p
+      AND bukrs   IN s_buk_p
+      AND aedat   IN s_aed_p
+      AND loekz   NE c_ped_eliminado.
+
+  IF sy-subrc IS INITIAL.
+
+    REFRESH lt_ekpo_fae[].
+    lt_ekpo_fae[] = gt_ekpo[].
+    SORT lt_ekpo_fae BY banfn bnfpo.
+    DELETE ADJACENT DUPLICATES FROM lt_ekpo_fae COMPARING banfn bnfpo.
+
+    IF lt_ekpo_fae[] IS NOT INITIAL.
+
+* Seleciona Requisições
+      REFRESH gt_eban[].
+      SELECT  banfn
+              bnfpo
+              bsart
+              bstyp
+              loekz
+              frgkz
+              badat
+              lfdat
+              konnr
+              ktpnr
+        FROM eban
+        INTO TABLE gt_eban
+        FOR ALL ENTRIES IN lt_ekpo_fae
+        WHERE banfn   EQ lt_ekpo_fae-banfn
+          AND bnfpo   EQ lt_ekpo_fae-bnfpo
+          AND loekz   NE c_req_eliminada.
+
+      IF sy-subrc IS INITIAL.
+
+* busca dados do aprovador da requisição
+        REFRESH lt_eban_aux[].
+        LOOP AT gt_eban INTO ls_eban.
+
+          MOVE-CORRESPONDING ls_eban TO ls_eban_aux.
+          APPEND ls_eban_aux TO lt_eban_aux.
+
+        ENDLOOP.
+
+        REFRESH gt_et_aprov[].
+        CALL FUNCTION 'ZNEOF_GET_STATUS_APROV'
+          EXPORTING
+            it_eban  = lt_eban_aux
+          IMPORTING
+            et_aprov = gt_et_aprov.
+
+      ENDIF.
+
+    ENDIF.
+
+    REFRESH lt_ekpo_fae[].
+    lt_ekpo_fae[] = gt_ekpo[].
+    SORT lt_ekpo_fae BY ebeln.
+    DELETE ADJACENT DUPLICATES FROM lt_ekpo_fae COMPARING ebeln.
+
+    IF lt_ekpo_fae[] IS NOT INITIAL.
+
+* Seleciona Cabeçario do Pedido
+      REFRESH gt_ekko[].
+      SELECT  ebeln
+              bukrs
+              bstyp
+              bsart
+              aedat
+              lifnr
+        FROM ekko
+        INTO TABLE gt_ekko
+        FOR ALL ENTRIES IN lt_ekpo_fae
+        WHERE ebeln   EQ lt_ekpo_fae-ebeln
+          AND loekz   NE c_ped_eliminado.
+
+    ENDIF.
+
+    REFRESH lt_ekpo_fae[].
+    lt_ekpo_fae[] = gt_ekpo[].
+    SORT lt_ekpo_fae BY ebeln ebelp.
+    DELETE ADJACENT DUPLICATES FROM lt_ekpo_fae COMPARING ebeln ebelp.
+
+    IF lt_ekpo_fae[] IS NOT INITIAL.
+
+      REFRESH gt_ekbe[].
+      SELECT  ebeln
+              ebelp
+              zekkn
+              vgabe
+              gjahr
+              belnr
+              buzei
+              bewtp
+              shkzg
+        FROM ekbe
+        INTO TABLE gt_ekbe
+        FOR ALL ENTRIES IN lt_ekpo_fae
+        WHERE ebeln = lt_ekpo_fae-ebeln
+          AND ebelp = lt_ekpo_fae-ebelp.
+
+      IF sy-subrc IS INITIAL.
+
+        REFRESH lt_ekbe_fae[].
+        lt_ekbe_fae[] = gt_ekbe[].
+        SORT lt_ekbe_fae BY belnr gjahr.
+        DELETE ADJACENT DUPLICATES FROM lt_ekbe_fae COMPARING belnr gjahr.
+
+        IF lt_ekbe_fae[] IS NOT INITIAL.
+
+          REFRESH gt_j_1bnfdoc[].
+          SELECT  docnum
+                  nftype
+                  series
+                  nfnum
+                  belnr
+                  gjahr
+                  bukrs
+                  branch
+                  nfenum
+                  nfesrv
+            FROM j_1bnfdoc
+            INTO TABLE gt_j_1bnfdoc
+            FOR ALL ENTRIES IN lt_ekbe_fae
+            WHERE belnr EQ lt_ekbe_fae-belnr
+              AND gjahr EQ lt_ekbe_fae-gjahr.
+
+        ENDIF.
+
+*        SORT gt_ekko BY ebeln.
+*
+*        REFRESH lt_awkey[].
+*        LOOP AT gt_ekbe INTO ls_ekbe.
+*
+*          CLEAR ls_awkey.
+*
+*          CONCATENATE ls_ekbe-belnr
+*                      ls_ekbe-gjahr
+*                 INTO ls_awkey-awkey.
+*
+*          CLEAR ls_ekko.
+*          READ TABLE gt_ekko INTO ls_ekko WITH KEY  ebeln = ls_ekbe-ebeln
+*                                                    BINARY SEARCH.
+*          IF sy-subrc IS INITIAL.
+*            ls_awkey-bukrs = ls_ekko-bukrs.
+*          ENDIF.
+*
+*          APPEND ls_awkey TO lt_awkey.
+*
+*        ENDLOOP.
+*
+*        SORT lt_awkey BY bukrs awkey.
+*        DELETE ADJACENT DUPLICATES FROM lt_awkey COMPARING bukrs awkey.
+*
+*        IF lt_awkey[] IS NOT INITIAL.
+*
+*          REFRESH gt_bkpf[].
+*          SELECT  bukrs
+*                  belnr
+*                  gjahr
+*                  blart
+*                  bldat
+*                  xblnr
+*                  awkey
+*            FROM bkpf
+*            INTO TABLE gt_bkpf
+*            FOR ALL ENTRIES IN lt_awkey
+*            WHERE bukrs = lt_awkey-bukrs
+*              AND awkey = lt_awkey-awkey.
+*
+*        ENDIF.
+*
+      ENDIF.
+
+    ENDIF.
+
+  ENDIF.
+
+ENDFORM.                    " F_SELECAO_POR_PEDIDO
+
+*&---------------------------------------------------------------------*
+*&      Form  F_PROCESSA_DADOS_PED
+*&---------------------------------------------------------------------*
+*       Processa dados por Pedido
+*----------------------------------------------------------------------*
+FORM f_processa_dados_ped.
+
+* Declarações Locais
+  DATA:
+    lt_ekbe_migo    TYPE TABLE OF ty_ekbe,
+    lt_ekbe_miro    TYPE TABLE OF ty_ekbe,
+
+    ls_eban         LIKE LINE OF gt_eban,
+    ls_ekpo         LIKE LINE OF gt_ekpo,
+    ls_ekko         LIKE LINE OF gt_ekko,
+    ls_saida        LIKE LINE OF gt_saida,
+    ls_et_aprov     LIKE LINE OF gt_et_aprov,
+    ls_ekbe         LIKE LINE OF gt_ekbe,
+    ls_ekbe_migo    LIKE LINE OF lt_ekbe_migo,
+    ls_ekbe_miro    LIKE LINE OF lt_ekbe_miro,
+    ls_bkpf         LIKE LINE OF gt_bkpf,
+    ls_j_1bnfdoc    LIKE LINE OF gt_j_1bnfdoc,
+
+    lv_index_ekpo   TYPE sy-tabix,
+    lv_migo_found   TYPE c,
+    lv_miro_found   TYPE c,
+    lv_count        TYPE sy-tabix,
+    lv_awkey        TYPE bkpf-awkey.
+
+
+
+
+  SORT: gt_ekpo       BY banfn bnfpo,
+        gt_ekko       BY ebeln,
+        gt_et_aprov   BY banfn bnfpo,
+        gt_ekbe       BY ebeln ebelp,
+        gt_bkpf       BY bukrs awkey,
+        gt_j_1bnfdoc  BY belnr gjahr.
+
+  REFRESH gt_saida[].
+
+  SORT: gt_eban       BY banfn bnfpo,
+        gt_ekko       BY ebeln,
+        gt_et_aprov   BY banfn bnfpo,
+        gt_ekbe       BY ebeln ebelp,
+        gt_bkpf       BY bukrs awkey.
+
+  LOOP AT gt_ekpo INTO ls_ekpo.
+
+    CLEAR ls_saida.
+    ls_saida-ebeln = ls_ekpo-ebeln.
+    ls_saida-ebelp = ls_ekpo-ebelp.
+    ls_saida-konnr = ls_ekpo-konnr.
+
+    CLEAR ls_ekko.
+    READ TABLE gt_ekko INTO ls_ekko WITH KEY  ebeln = ls_ekpo-ebeln
+                                              BINARY SEARCH.
+    IF sy-subrc IS INITIAL.
+
+      ls_saida-aedat = ls_ekko-aedat.
+
+    ELSE.
+      CONTINUE.
+    ENDIF.
+
+    CLEAR ls_eban.
+    READ TABLE gt_eban INTO ls_eban WITH KEY  banfn = ls_ekpo-banfn
+                                              bnfpo = ls_ekpo-bnfpo
+                                              BINARY SEARCH.
+    IF sy-subrc IS INITIAL.
+
+      ls_saida-banfn = ls_eban-banfn.
+      ls_saida-bnfpo = ls_eban-bnfpo.
+      ls_saida-lfdat = ls_eban-lfdat.
+
+      IF ls_saida-konnr IS INITIAL.
+        ls_saida-konnr = ls_eban-konnr.
+      ENDIF.
+
+* Dados da Aprovação da Requisição
+      CLEAR ls_et_aprov.
+      READ TABLE gt_et_aprov INTO ls_et_aprov WITH KEY  banfn = ls_eban-banfn
+                                                        bnfpo = ls_eban-bnfpo
+                                                        BINARY SEARCH.
+      IF sy-subrc IS INITIAL.
+
+        ls_saida-uname_aprov = ls_et_aprov-username.
+        ls_saida-udate_aprov = ls_et_aprov-udate.
+        ls_saida-utime_aprov = ls_et_aprov-utime.
+        ls_saida-descricao   = ls_et_aprov-descricao.
+
+      ENDIF.
+
+    ENDIF.
+
+
+    CLEAR ls_ekbe.
+    READ TABLE gt_ekbe INTO ls_ekbe WITH KEY  ebeln = ls_ekpo-ebeln
+                                              ebelp = ls_ekpo-ebelp
+                                              BINARY SEARCH.
+    IF sy-subrc IS INITIAL.
+
+      REFRESH lt_ekbe_migo[].
+      lt_ekbe_migo[] = gt_ekbe[].
+      DELETE lt_ekbe_migo WHERE ebeln <> ls_ekpo-ebeln
+                             OR ebelp <> ls_ekpo-ebelp
+                             OR bewtp <> 'E'.
+
+      REFRESH lt_ekbe_miro[].
+      lt_ekbe_miro[] = gt_ekbe[].
+      DELETE lt_ekbe_miro WHERE ebeln <> ls_ekpo-ebeln
+                             OR ebelp <> ls_ekpo-ebelp
+                             OR bewtp <> 'Q'.
+
+      CLEAR lv_count.
+      DO.
+
+        CLEAR:  lv_migo_found,
+                lv_miro_found.
+
+        lv_count = lv_count + 1.
+
+* Dados da MIGO
+        CLEAR ls_ekbe_migo.
+        READ TABLE lt_ekbe_migo INTO ls_ekbe_migo INDEX lv_count.
+        IF sy-subrc IS INITIAL.
+
+          lv_migo_found = abap_true.
+
+          ls_saida-mblnr      = ls_ekbe_migo-belnr.
+          ls_saida-gjahr_migo = ls_ekbe_migo-gjahr.
+
+        ENDIF.
+
+* Dados da MIRO
+        CLEAR ls_ekbe_miro.
+        READ TABLE lt_ekbe_miro INTO ls_ekbe_miro INDEX lv_count.
+        IF sy-subrc IS INITIAL.
+
+          lv_miro_found = abap_true.
+
+          ls_saida-belnr      = ls_ekbe_miro-belnr.
+          ls_saida-gjahr_miro = ls_ekbe_miro-gjahr.
+
+          CLEAR ls_j_1bnfdoc.
+          READ TABLE gt_j_1bnfdoc INTO ls_j_1bnfdoc WITH KEY  belnr = ls_ekbe_miro-belnr
+                                                              gjahr = ls_ekbe_miro-gjahr
+                                                              BINARY SEARCH.
+          IF sy-subrc IS INITIAL.
+
+            ls_saida-nfnum  = ls_j_1bnfdoc-nfnum.
+            ls_saida-series = ls_j_1bnfdoc-series.
+            ls_saida-docnum = ls_j_1bnfdoc-docnum.
+
+          ENDIF.
+** Monta awkey
+*          CLEAR lv_awkey.
+*          CONCATENATE ls_ekbe_miro-belnr
+*                      ls_ekbe_miro-gjahr
+*                 INTO lv_awkey.
+*
+*          CLEAR ls_bkpf.
+*          READ TABLE gt_bkpf INTO ls_bkpf WITH KEY  bukrs = ls_ekpo-bukrs
+*                                                    awkey = lv_awkey
+*                                                    BINARY SEARCH.
+*          IF sy-subrc IS INITIAL.
+*
+*            ls_saida-nfnum = ls_bkpf-xblnr.
+*
+*          ENDIF.
+
+        ENDIF.
+
+        IF  lv_migo_found IS INITIAL AND
+            lv_miro_found IS INITIAL.
+
+          EXIT.
+
+        ELSE.
+
+* Adiciona registro na tabela interna do ALV
+          APPEND ls_saida TO gt_saida.
+
+* Limpa os campos
+          CLEAR:  ls_saida-mblnr,
+                  ls_saida-belnr,
+                  ls_saida-nfnum,
+                  ls_saida-series,
+                  ls_saida-gjahr_migo,
+                  ls_saida-gjahr_miro,
+                  ls_saida-docnum.
+
+        ENDIF.
+
+      ENDDO.
+
+    ELSE.
+
+* Se ainda os Documentos da MIGO e MIRO não foram criados para este item do Pedido,
+* então apenas adicionar o registro com os dados da Requisição e Pedido
+      APPEND ls_saida TO gt_saida.
+
+    ENDIF.
+
+  ENDLOOP.
+
+ENDFORM.                    " F_PROCESSA_DADOS_PED
+
+*&---------------------------------------------------------------------*
+*&      Form  F_SELECAO_POR_NOTA_FISCAL
+*&---------------------------------------------------------------------*
+*       Selecão por Nota Fiscal
+*----------------------------------------------------------------------*
+FORM f_selecao_por_nota_fiscal .
+
+* Declarações Locais
+  DATA:
+    lt_j_1bnfdoc      TYPE TABLE OF ty_j_1bnfdoc,
+    lt_ekbe_fae       TYPE TABLE OF ty_ekbe,
+    lt_ekpo_fae       TYPE TABLE OF ty_ekpo.
+
+  REFRESH gt_j_1bnfdoc[].
+  SELECT  docnum
+          nftype
+          series
+          nfnum
+          belnr
+          gjahr
+          bukrs
+          branch
+          nfenum
+          nfesrv
+    FROM j_1bnfdoc
+    INTO TABLE gt_j_1bnfdoc
+    WHERE bukrs   IN s_buk_n
+      AND branch  IN s_bra_n
+      AND nfnum   IN s_nfn_n
+      AND series  IN s_ser_n
+      AND docdat  IN s_dat_n
+      AND pstdat  IN s_pst_n.
+
+  IF sy-subrc IS INITIAL.
+
+    REFRESH lt_j_1bnfdoc[].
+    lt_j_1bnfdoc[] = gt_j_1bnfdoc[].
+    SORT lt_j_1bnfdoc BY belnr gjahr.
+    DELETE ADJACENT DUPLICATES FROM lt_j_1bnfdoc COMPARING belnr gjahr.
+
+    IF lt_j_1bnfdoc[] IS NOT INITIAL.
+
+      REFRESH gt_ekbe[].
+      SELECT  ebeln
+              ebelp
+              zekkn
+              vgabe
+              gjahr
+              belnr
+              buzei
+              bewtp
+              shkzg
+        FROM ekbe
+        INTO TABLE gt_ekbe
+        FOR ALL ENTRIES IN lt_j_1bnfdoc
+        WHERE belnr = lt_j_1bnfdoc-belnr
+          AND gjahr = lt_j_1bnfdoc-gjahr.
+
+      IF sy-subrc IS INITIAL.
+
+        REFRESH lt_ekbe_fae[].
+        lt_ekbe_fae[] = gt_ekbe[].
+        SORT lt_ekbe_fae BY ebeln ebelp.
+        DELETE ADJACENT DUPLICATES FROM lt_ekbe_fae COMPARING ebeln ebelp.
+
+        IF lt_ekbe_fae[] IS NOT INITIAL.
+
+* Seleciona Pedido e Itens
+          REFRESH gt_ekpo[].
+          SELECT  ebeln
+                  ebelp
+                  matnr
+                  bukrs
+                  werks
+                  banfn
+                  bnfpo
+                  konnr
+            FROM ekpo
+            INTO TABLE gt_ekpo
+            FOR ALL ENTRIES IN lt_ekbe_fae
+            WHERE ebeln   EQ lt_ekbe_fae-ebeln
+              AND ebelp   EQ lt_ekbe_fae-ebelp
+              AND loekz   NE c_ped_eliminado.
+
+          IF sy-subrc IS INITIAL.
+
+            REFRESH lt_ekpo_fae[].
+            lt_ekpo_fae[] = gt_ekpo[].
+            SORT lt_ekpo_fae BY ebeln.
+            DELETE ADJACENT DUPLICATES FROM lt_ekpo_fae COMPARING ebeln.
+
+            IF lt_ekpo_fae[] IS NOT INITIAL.
+
+* Seleciona Cabeçario do Pedido
+              REFRESH gt_ekko[].
+              SELECT  ebeln
+                      bukrs
+                      bstyp
+                      bsart
+                      aedat
+                      lifnr
+                FROM ekko
+                INTO TABLE gt_ekko
+                FOR ALL ENTRIES IN lt_ekpo_fae
+                WHERE ebeln   EQ lt_ekpo_fae-ebeln
+                  AND loekz   NE c_ped_eliminado.
+
+            ENDIF.
+
+            REFRESH lt_ekpo_fae[].
+            lt_ekpo_fae[] = gt_ekpo[].
+            SORT lt_ekpo_fae BY banfn bnfpo.
+            DELETE ADJACENT DUPLICATES FROM lt_ekpo_fae COMPARING banfn bnfpo.
+
+            IF lt_ekpo_fae[] IS NOT INITIAL.
+
+* Seleciona Requisições
+              REFRESH gt_eban[].
+              SELECT  banfn
+                      bnfpo
+                      bsart
+                      bstyp
+                      loekz
+                      frgkz
+                      badat
+                      lfdat
+                      konnr
+                      ktpnr
+                FROM eban
+                INTO TABLE gt_eban
+                FOR ALL ENTRIES IN lt_ekpo_fae
+                WHERE banfn   EQ lt_ekpo_fae-banfn
+                  AND bnfpo   EQ lt_ekpo_fae-bnfpo
+                  AND loekz   NE c_req_eliminada.
+
+            ENDIF.
+
+* Será refeito a seleção na tabela EKBE a partir dos Pedidos para trazer também
+* os documentos da MIGO que na primeira seleção não são selecionados
+            REFRESH lt_ekpo_fae[].
+            lt_ekpo_fae[] = gt_ekpo[].
+            SORT lt_ekpo_fae BY ebeln ebelp.
+            DELETE ADJACENT DUPLICATES FROM lt_ekpo_fae COMPARING ebeln ebelp.
+
+            IF lt_ekpo_fae[] IS NOT INITIAL.
+
+              REFRESH gt_ekbe[].
+              SELECT  ebeln
+                      ebelp
+                      zekkn
+                      vgabe
+                      gjahr
+                      belnr
+                      buzei
+                      bewtp
+                      shkzg
+                FROM ekbe
+                INTO TABLE gt_ekbe
+                FOR ALL ENTRIES IN lt_ekpo_fae
+                WHERE ebeln = lt_ekpo_fae-ebeln
+                  AND ebelp = lt_ekpo_fae-ebelp.
+
+              IF sy-subrc IS INITIAL.
+              ENDIF.
+
+            ENDIF.
+
+          ENDIF.
+
+        ENDIF.
+
+      ENDIF.
+
+    ENDIF.
+
+  ENDIF.
+
+
+
+
+ENDFORM.                    " F_SELECAO_POR_NOTA_FISCAL
+
+*&---------------------------------------------------------------------*
+*&      Form  F_EXEC_VALIDACOES
+*&---------------------------------------------------------------------*
+*       Executa as validações
+*----------------------------------------------------------------------*
+FORM f_exec_validacoes .
+
+  IF rb_req IS NOT INITIAL.
+
+    IF  s_ban_r[] IS INITIAL AND
+        s_bad_r[] IS INITIAL.
+
+* Um dos campos deve ser preenchido: Nº Requisição ou Data da Requisição.
+      MESSAGE s003 WITH text-e02  text-e03 DISPLAY LIKE jymsg_c_error.
+      LEAVE LIST-PROCESSING.
+      EXIT.
+
+    ENDIF.
+
+  ELSEIF rb_ped IS NOT INITIAL.
+
+    IF s_ebn_p[] IS INITIAL AND ( s_buk_p[] IS INITIAL OR s_aed_p[] IS INITIAL ).
+
+* Um dos campos deve ser preenchido: Nº Pedido ou Empresa e Data do Pedido.
+      MESSAGE s003 WITH text-e02  text-e04 DISPLAY LIKE jymsg_c_error.
+      LEAVE LIST-PROCESSING.
+      EXIT.
+
+    ENDIF.
+
+  ELSEIF rb_nf IS NOT INITIAL.
+
+    IF  ( s_buk_n[] IS INITIAL OR s_nfn_n[] IS INITIAL ) AND
+        ( s_buk_n[] IS INITIAL OR s_pst_n[] IS INITIAL ).
+
+* Um dos campos deve ser preenchido: Empresa e Nº Nota Fiscal ou Empresa e Data do Lançamento
+      MESSAGE s003 WITH text-e02  text-e05 text-e06 DISPLAY LIKE jymsg_c_error.
+      LEAVE LIST-PROCESSING.
+      EXIT.
+
+    ENDIF.
+
+  ENDIF.
+
+ENDFORM.                    " F_EXEC_VALIDACOES

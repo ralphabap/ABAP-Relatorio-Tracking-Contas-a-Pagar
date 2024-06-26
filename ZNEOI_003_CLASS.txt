@@ -1,0 +1,136 @@
+*&---------------------------------------------------------------------*
+*&  Include           ZNEOI_003_CLASS
+*&---------------------------------------------------------------------*
+
+*----------------------------------------------------------------------*
+*       CLASS LCL_ALV_TRACKING DEFINITION
+*----------------------------------------------------------------------*
+* Classe para o Relatório ALV
+*----------------------------------------------------------------------*
+CLASS lcl_alv_tracking DEFINITION FINAL.
+
+  PUBLIC SECTION.
+
+    CLASS-METHODS get_fieldcat
+        IMPORTING iv_structure  TYPE c
+        RETURNING value(et_fieldcat) TYPE lvc_t_fcat.
+
+ENDCLASS.                    "LCL_LOG_CARGA_REQC DEFINITION
+
+*----------------------------------------------------------------------*
+*       CLASS LCL_ALV_TRACKING IMPLEMENTATION
+*----------------------------------------------------------------------*
+* Implementação dos métodos da classe LCL_ALV_TRACKING
+*----------------------------------------------------------------------*
+CLASS lcl_alv_tracking IMPLEMENTATION.
+
+*&---------------------------------------------------------------------*
+*&      Class-Method  GET_FIELDCAT
+*&---------------------------------------------------------------------*
+* Retorna os campos para montagem do fieldcat
+*----------------------------------------------------------------------*
+*      <--ET_FIELDCAT[]  Catálogo dos campos
+*----------------------------------------------------------------------*
+  METHOD get_fieldcat.
+
+    DATA: lv_structure_name TYPE dd02l-tabname.
+*-------------------------------------------------------------------
+
+    REFRESH: et_fieldcat[].
+
+    MOVE iv_structure TO lv_structure_name.
+
+    CALL FUNCTION 'LVC_FIELDCATALOG_MERGE'
+      EXPORTING
+        i_structure_name       = lv_structure_name
+        i_client_never_display = 'X'
+      CHANGING
+        ct_fieldcat            = et_fieldcat[]
+      EXCEPTIONS
+        inconsistent_interface = 1
+        program_error          = 2
+        OTHERS                 = 3.
+
+    IF sy-subrc <> 0.
+      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+              WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ENDIF.
+
+  ENDMETHOD.                    "GET_FIELDCAT
+
+ENDCLASS.                    "LCL_LOG_CARGA_REQC IMPLEMENTATION
+
+*----------------------------------------------------------------------*
+*       CLASS LCL_GRID_EVENT_RECEIVER DEFINITION
+*----------------------------------------------------------------------*
+* Definição dos métodos para os eventos do ALV GRID
+*----------------------------------------------------------------------*
+CLASS lcl_grid_event_receiver DEFINITION FINAL.
+
+  PUBLIC SECTION.
+
+    METHODS handler_hotspot_click
+      FOR EVENT hotspot_click
+      OF cl_gui_alv_grid
+      IMPORTING e_column_id es_row_no.
+
+ENDCLASS.                    "LCL_GRID_EVENT_RECEIVER DEFINITION
+
+*----------------------------------------------------------------------*
+*       CLASS LCL_GRID_EVENT_RECEIVER IMPLEMENTATION
+*----------------------------------------------------------------------*
+* Implementação dos métodos para os eventos do ALV GRID
+*----------------------------------------------------------------------*
+CLASS lcl_grid_event_receiver IMPLEMENTATION.
+
+  METHOD handler_hotspot_click.
+
+    DATA: ls_saida LIKE LINE OF  gt_saida.
+
+    FIELD-SYMBOLS: <lfs_campo> TYPE   any.
+*-------------------------------------------------------------------
+
+    READ TABLE gt_saida INTO ls_saida INDEX es_row_no-row_id.
+
+    CHECK sy-subrc IS INITIAL.
+
+*   " Nº do Documento
+    ASSIGN COMPONENT e_column_id OF STRUCTURE ls_saida TO <lfs_campo>.
+
+    CHECK <lfs_campo> IS ASSIGNED AND
+          <lfs_campo> IS NOT INITIAL.
+
+    CASE e_column_id.
+
+      WHEN c_banfn.
+        SET PARAMETER ID 'BAN' FIELD <lfs_campo>.
+
+        CALL TRANSACTION 'ME53N' AND SKIP FIRST SCREEN.
+
+      WHEN c_ebeln.
+        SET PARAMETER ID 'BES' FIELD <lfs_campo>.
+
+        CALL TRANSACTION 'ME23N' AND SKIP FIRST SCREEN.
+
+      WHEN c_mblnr.
+        SET PARAMETER ID 'MBN' FIELD <lfs_campo>.
+        SET PARAMETER ID 'MJA' FIELD ls_saida-gjahr_migo.
+
+        CALL TRANSACTION 'MB03' AND SKIP FIRST SCREEN.
+
+      WHEN c_belnr.
+        SET PARAMETER ID 'RBN' FIELD <lfs_campo>.
+        SET PARAMETER ID 'GJR' FIELD ls_saida-gjahr_miro.
+
+        CALL TRANSACTION 'MIR4' AND SKIP FIRST SCREEN.
+
+      WHEN c_nfnum.
+        SET PARAMETER ID 'JEF' FIELD ls_saida-docnum.
+
+        CALL TRANSACTION 'J1B3N' AND SKIP FIRST SCREEN.
+
+    ENDCASE.  " CASE e_column_id.
+
+  ENDMETHOD.                    "HANDLER_HOTSPOT_CLICK
+
+ENDCLASS.                    "LCL_GRID_EVENT_RECEIVER IMPLEMENTATION

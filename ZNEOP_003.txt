@@ -1,0 +1,304 @@
+*---------------------------------------------------------------------------
+* Programa : ZNEOP_003
+* Cliente  : ENEL
+* Módulo   : MM
+* Transação:
+* ID       :
+* Descrição: Relatório de Tracking do Contas a Pagar:
+*
+* Autor   : Ralph Zuanella                                 Data: 25/05/2016
+*---------------------------------------------------------------------------
+* Histórico de Alterações:
+*---------------------------------------------------------------------------
+* Data       |Change #     |Autor                |Alteração
+*---------------------------------------------------------------------------
+* 25/05/2016 |DEVK993169   |Ralph Zuanella       |Desenvolvimento Inicial
+*---------------------------------------------------------------------------
+REPORT zneop_003 MESSAGE-ID zneo.
+
+*---------------------------------------------------------------------------
+* Tabelas
+*---------------------------------------------------------------------------
+TABLES:
+  eban,
+  ekko,
+  ekpo,
+  j_1bnfdoc.
+
+*---------------------------------------------------------------------------
+* Tipos
+*---------------------------------------------------------------------------
+TYPES:
+  BEGIN OF ty_eban,
+    banfn     TYPE eban-banfn,
+    bnfpo     TYPE eban-bnfpo,
+    bsart     TYPE eban-bsart,
+    bstyp     TYPE eban-bstyp,
+    loekz     TYPE eban-loekz,
+    frgkz     TYPE eban-frgkz,
+    badat     TYPE eban-badat,
+    lfdat     TYPE eban-lfdat,
+    konnr     TYPE eban-konnr,
+    ktpnr     TYPE eban-ktpnr,
+  END OF ty_eban,
+
+  BEGIN OF ty_ekko,
+    ebeln     TYPE ekko-ebeln,
+    bukrs     TYPE ekko-bukrs,
+    bstyp     TYPE ekko-bstyp,
+    bsart     TYPE ekko-bsart,
+    aedat     TYPE ekko-aedat,
+    lifnr     TYPE ekko-lifnr,
+  END OF ty_ekko,
+
+  BEGIN OF ty_ekpo,
+    ebeln     TYPE ekpo-ebeln,
+    ebelp     TYPE ekpo-ebelp,
+    matnr     TYPE ekpo-matnr,
+    bukrs     TYPE ekpo-bukrs,
+    werks     TYPE ekpo-werks,
+    banfn     TYPE ekpo-banfn,
+    bnfpo     TYPE ekpo-bnfpo,
+    konnr     TYPE ekpo-konnr,
+  END OF ty_ekpo,
+
+  BEGIN OF ty_ekbe,
+    ebeln     TYPE ekbe-ebeln,
+    ebelp     TYPE ekbe-ebelp,
+    zekkn     TYPE ekbe-zekkn,
+    vgabe     TYPE ekbe-vgabe,
+    gjahr     TYPE ekbe-gjahr,
+    belnr     TYPE ekbe-belnr,
+    buzei     TYPE ekbe-buzei,
+    bewtp     TYPE ekbe-bewtp,
+    shkzg     TYPE ekbe-shkzg,
+  END OF ty_ekbe,
+
+  BEGIN OF ty_bkpf,
+    bukrs     TYPE bkpf-bukrs,
+    belnr     TYPE bkpf-belnr,
+    gjahr     TYPE bkpf-gjahr,
+    blart     TYPE bkpf-blart,
+    bldat     TYPE bkpf-bldat,
+    xblnr     TYPE bkpf-xblnr,
+    awkey     TYPE bkpf-awkey,
+  END OF ty_bkpf,
+
+  BEGIN OF ty_awkey,
+    bukrs     TYPE bkpf-bukrs,
+    awkey     TYPE bkpf-awkey,
+  END OF ty_awkey,
+
+  BEGIN OF ty_j_1bnfdoc,
+    docnum    TYPE j_1bnfdoc-docnum,
+    nftype    TYPE j_1bnfdoc-nftype,
+    series    TYPE j_1bnfdoc-series,
+    nfnum     TYPE j_1bnfdoc-nfnum,
+    belnr     TYPE j_1bnfdoc-belnr,
+    gjahr     TYPE j_1bnfdoc-gjahr,
+    bukrs     TYPE j_1bnfdoc-bukrs,
+    branch    TYPE j_1bnfdoc-branch,
+    nfenum    TYPE j_1bnfdoc-nfenum,
+    nfesrv    TYPE j_1bnfdoc-nfesrv,
+  END OF ty_j_1bnfdoc.
+
+*---------------------------------------------------------------------------
+* Tabelas Internas
+*---------------------------------------------------------------------------
+DATA:
+  gt_eban           TYPE TABLE OF ty_eban,
+  gt_ekko           TYPE TABLE OF ty_ekko,
+  gt_ekpo           TYPE TABLE OF ty_ekpo,
+  gt_saida          TYPE TABLE OF zneos_005,
+  gt_fcat           TYPE lvc_t_fcat,
+  gt_et_aprov       TYPE zneott_004,
+  gt_ekbe           TYPE TABLE OF ty_ekbe,
+  gt_bkpf           TYPE TABLE OF ty_bkpf,
+  gt_j_1bnfdoc      TYPE TABLE OF ty_j_1bnfdoc.
+
+*---------------------------------------------------------------------------
+* Estruturas
+*---------------------------------------------------------------------------
+DATA:
+  gs_layout_alv     TYPE lvc_s_layo.
+
+*---------------------------------------------------------------------------
+* Variáveis
+*---------------------------------------------------------------------------
+*DATA:
+*  gv_regra_selecao      TYPE c.
+
+*---------------------------------------------------------------------------
+* Objetos
+*---------------------------------------------------------------------------
+DATA:
+ 	go_cont_alv   TYPE REF TO cl_gui_custom_container,
+  go_alv_grid   TYPE REF TO cl_gui_alv_grid.
+
+*---------------------------------------------------------------------------
+* Constantes
+*---------------------------------------------------------------------------
+CONSTANTS:
+  c_req_eliminada     TYPE eban-loekz     VALUE 'L',
+  c_ped_eliminado     TYPE ekpo-loekz     VALUE 'L',
+  c_banfn             TYPE fieldname      VALUE 'BANFN',
+  c_bnfpo             TYPE fieldname      VALUE 'BNFPO',
+  c_lfdat             TYPE fieldname      VALUE 'LFDAT',
+  c_ebeln             TYPE fieldname      VALUE 'EBELN',
+  c_ebelp             TYPE fieldname      VALUE 'EBELP',
+  c_aedat             TYPE fieldname      VALUE 'AEDAT',
+  c_mblnr             TYPE fieldname      VALUE 'MBLNR',
+  c_belnr             TYPE fieldname      VALUE 'BELNR',
+  c_series            TYPE fieldname      VALUE 'SERIES',
+  c_nfnum             TYPE fieldname      VALUE 'NFNUM',
+  c_konnr             TYPE fieldname      VALUE 'KONNR',
+  c_uname_aprov       TYPE fieldname      VALUE 'UNAME_APROV',
+  c_udate_aprov       TYPE fieldname      VALUE 'UDATE_APROV',
+  c_utime_aprov       TYPE fieldname      VALUE 'UTIME_APROV',
+  c_descricao         TYPE fieldname      VALUE 'DESCRICAO',
+  c_habilitar         TYPE c              VALUE '1',
+
+  BEGIN OF c_sel_por,
+    requisicao        TYPE c LENGTH 1     VALUE 'R',
+    pedido            TYPE c LENGTH 1     VALUE 'P',
+    nota_fiscal       TYPE c LENGTH 1     VALUE 'N',
+  END   OF c_sel_por.
+
+*---------------------------------------------------------------------------
+* Tela de Seleção
+*---------------------------------------------------------------------------
+SELECTION-SCREEN BEGIN OF BLOCK bloc4 WITH FRAME TITLE text-b04.
+
+PARAMETERS rb_req  RADIOBUTTON GROUP gp1 USER-COMMAND rad1 DEFAULT 'X'.
+PARAMETERS rb_ped  RADIOBUTTON GROUP gp1.
+PARAMETERS rb_nf   RADIOBUTTON GROUP gp1.
+
+SELECTION-SCREEN END OF BLOCK bloc4.
+
+SELECTION-SCREEN: BEGIN OF BLOCK bloc1 WITH FRAME TITLE text-b01.
+
+SELECT-OPTIONS:
+  s_ban_r     FOR eban-banfn MODIF ID req,"Requisição
+  s_bnf_r     FOR eban-bnfpo MODIF ID req,"Item Requisição
+  s_bad_r     FOR eban-badat MODIF ID req,"Data da Solicitação
+  s_lfd_r     FOR eban-lfdat MODIF ID req."Data da Remessa
+
+SELECTION-SCREEN END OF BLOCK bloc1.
+
+SELECTION-SCREEN: BEGIN OF BLOCK bloc2 WITH FRAME TITLE text-b02.
+
+SELECT-OPTIONS:
+  s_ebn_p     FOR ekpo-ebeln MODIF ID ped,"Pedido
+  s_ebp_p     FOR ekpo-ebelp MODIF ID ped,"Item Pedido
+  s_buk_p     FOR ekpo-bukrs MODIF ID ped,"Empresa
+  s_aed_p     FOR ekpo-aedat MODIF ID ped."Data do Pedido
+
+SELECTION-SCREEN END OF BLOCK bloc2.
+
+SELECTION-SCREEN: BEGIN OF BLOCK bloc3 WITH FRAME TITLE text-b03.
+
+SELECT-OPTIONS:
+  s_buk_n     FOR j_1bnfdoc-bukrs   MODIF ID nf,"Empresa
+  s_bra_n     FOR j_1bnfdoc-branch  MODIF ID nf,"Local de Negócio
+  s_nfn_n     FOR j_1bnfdoc-nfnum   MODIF ID nf,"Nº nota fiscal
+  s_ser_n     FOR j_1bnfdoc-series  MODIF ID nf,"Serie
+  s_dat_n     FOR j_1bnfdoc-docdat  MODIF ID nf,"Data do Documento
+  s_pst_n     FOR j_1bnfdoc-pstdat  MODIF ID nf."Data do Lançamento
+
+SELECTION-SCREEN END OF BLOCK bloc3.
+
+*--------------------------------------------------------------------*
+* Macros
+*--------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*&      Define  D_EXIBE_CAMPOS
+*&---------------------------------------------------------------------*
+* Desabilita os campos da tela de seleção
+*----------------------------------------------------------------------*
+*       -->&1   Nome do grupo
+*       -->&2   Checkbox
+*----------------------------------------------------------------------*
+DEFINE d_exibe_campos.
+
+  if screen-group1 eq &1.
+
+    if &2 is not initial.
+      perform f_habilita_campos.
+    else.
+      perform f_desabilita_campos.
+    endif.
+
+  endif.  " if screen-group1 eq &1.
+
+END-OF-DEFINITION.        " D_EXIBE_CAMPOS
+
+*---------------------------------------------------------------------------
+* Includes
+*---------------------------------------------------------------------------
+INCLUDE zneoi_003_class.
+INCLUDE zneoi_003_form.
+INCLUDE zneoi_003_pbo.
+INCLUDE zneoi_003_pai.
+
+*---------------------------------------------------------------------------
+AT SELECTION-SCREEN OUTPUT.
+*---------------------------------------------------------------------------
+*** Exibe os campos da tela de seleção de acordo com as opções selecionadas
+  PERFORM f_exibe_campos_selecao.
+
+
+
+*---------------------------------------------------------------------------
+* START-OF-SELECTION.
+*---------------------------------------------------------------------------
+START-OF-SELECTION.
+
+* Executa validações
+  PERFORM f_exec_validacoes.
+
+* Executa a seleção de dados de acordo com a tela de seleção
+  IF rb_req IS NOT INITIAL.
+
+* Executa a seleção dos dados a partir da Requisição
+    PERFORM f_selecao_por_requisicao.
+
+  ELSEIF rb_ped IS NOT INITIAL.
+
+* Executa a seleção dos dados a partir do Pedido
+    PERFORM f_selecao_por_pedido.
+
+  ELSEIF rb_nf IS NOT INITIAL.
+
+* Executa a seleção dos dados a partir da Nota Fiscal
+    PERFORM f_selecao_por_nota_fiscal.
+
+  ENDIF.
+
+  IF rb_req IS NOT INITIAL.
+
+* Processa os dados selecionados por Requisição
+    PERFORM f_processa_dados_req.
+
+  ELSEIF  rb_ped IS NOT INITIAL OR
+          rb_nf  IS NOT INITIAL.
+
+* Processa os dados selecionados por Pedido
+    PERFORM f_processa_dados_ped.
+
+  ENDIF.
+
+
+  IF gt_saida[] IS INITIAL.
+
+* Nenhum registro encontrado para os critérios informados.
+    MESSAGE s000 WITH text-e01 DISPLAY LIKE jymsg_c_error.
+    LEAVE LIST-PROCESSING.
+    EXIT.
+
+  ENDIF.
+
+* Prepara layout do ALV, monta fieldcat e etc
+  PERFORM f_prepara_alv.
+
+* Chama tela do ALV
+  CALL SCREEN 9000.
